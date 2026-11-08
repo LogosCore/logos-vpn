@@ -1,0 +1,5 @@
+go.work
+go.work.sum
+/dist/
+/build/
+/cmd/logos-vpn/wintun/

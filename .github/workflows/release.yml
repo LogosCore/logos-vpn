@@ -1,0 +1,36 @@
+name: Release
+
+# A v* tag builds the six binaries (make dist: Wintun's DLL fetched and
+# checked against its published hash, embedded on Windows) and attaches
+# them to the tag's GitHub release, where core's image takes them from.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make dist VERSION=${{ github.ref_name }}
+
+      - name: Checksums
+        run: cd dist && sha256sum logos-vpn-* > SHA256SUMS
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --title "${{ github.ref_name }}" --notes "logos-vpn ${{ github.ref_name }}: the client for Logos's VPN front."
