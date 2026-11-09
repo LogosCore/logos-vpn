@@ -107,7 +107,10 @@ func newMachine(t *testing.T, d *device) *stack.Stack {
 }
 
 // fakeCore answers the client's frames as core does: each host by
-// result, bytes echoed back, datagrams answered.
+// result, bytes echoed back, datagrams answered. Its echo goes as core's
+// legs send: within the room the client's acks give, again from the
+// client's ack when it stalls (the client keeps no more than its window,
+// and drops what comes past it).
 type fakeCore struct {
 	t      *testing.T
 	c      *client.Client
@@ -118,10 +121,63 @@ type fakeCore struct {
 	got    map[uint64][]byte
 	next   map[uint64]uint64
 	eof    map[uint64]bool
-	sent   map[uint64]uint64
+	echo   map[uint64]*echoLeg
 	closes map[uint64]int
 	dgrams []protocol.TunnelDatagramItem
 	stop   chan struct{}
+}
+
+// echoLeg is a stream's echo toward the client: every byte (offset 0 on),
+// the eof once it comes, what was sent and what the client acked.
+type echoLeg struct {
+	buf          []byte
+	eof          bool
+	sent, acked  uint64
+	limit        uint64
+	lastProgress time.Time
+}
+
+// echoChunk is an echo item's most data; echoBurst the items a frame.
+const (
+	echoChunk = 16 << 10
+	echoBurst = 8
+)
+
+func (f *fakeCore) leg(stream uint64) *echoLeg {
+	l := f.echo[stream]
+	if l == nil {
+		l = &echoLeg{limit: protocol.DefaultTunnelRoom, lastProgress: time.Now()}
+		f.echo[stream] = l
+	}
+	return l
+}
+
+// flush sends each stream's echo the client has room for, from its ack
+// again when nothing moved for a while (f.mu held): what the client
+// dropped past its window comes again, as core's resend does.
+func (f *fakeCore) flush() []cbor.RawMessage {
+	var out []cbor.RawMessage
+	for stream, l := range f.echo {
+		end := uint64(len(l.buf))
+		if l.acked < l.sent && time.Since(l.lastProgress) > 200*time.Millisecond {
+			l.sent, l.lastProgress = l.acked, time.Now()
+		}
+		for len(out) < echoBurst {
+			stop := min(end, l.limit, l.sent+echoChunk)
+			eof := l.eof && stop == end
+			if stop <= l.sent && !(eof && l.sent == end) {
+				break
+			}
+			out = append(out, marshal(protocol.TunnelDataItem{T: protocol.ItemTunnelData, Task: f.task, Stream: stream, Off: l.sent,
+				Data: append([]byte(nil), l.buf[l.sent:stop]...), EOF: eof}))
+			l.sent = stop
+			if eof {
+				l.sent = end + 1
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (f *fakeCore) run() {
@@ -141,6 +197,26 @@ func (f *fakeCore) run() {
 				break
 			}
 		}
+		for {
+			f.mu.Lock()
+			out := f.flush()
+			f.mu.Unlock()
+			if len(out) == 0 {
+				break
+			}
+			f.send(out)
+		}
+	}
+}
+
+func (f *fakeCore) send(out []cbor.RawMessage) {
+	b, err := protocol.VPNFrame(out)
+	if err != nil {
+		f.t.Error(err)
+		return
+	}
+	if err := f.c.Take(b); err != nil {
+		f.t.Error(err)
 	}
 }
 
@@ -174,17 +250,27 @@ func (f *fakeCore) take(frame []byte) {
 			if d.Off == f.next[d.Stream] && !f.eof[d.Stream] {
 				f.got[d.Stream] = append(f.got[d.Stream], d.Data...)
 				f.next[d.Stream] += uint64(len(d.Data))
-				// Echoed back, with the eof when it comes.
-				echo := protocol.TunnelDataItem{T: protocol.ItemTunnelData, Task: f.task, Stream: d.Stream, Off: f.sent[d.Stream],
-					Data: append([]byte(nil), d.Data...), EOF: d.EOF}
-				f.sent[d.Stream] = echo.End()
+				// Echoed back (flush), with the eof when it comes.
+				l := f.leg(d.Stream)
+				l.buf = append(l.buf, d.Data...)
 				if d.EOF {
 					f.eof[d.Stream] = true
 					f.next[d.Stream]++
+					l.eof = true
 				}
-				out = append(out, marshal(echo))
 			}
 			out = append(out, marshal(protocol.TunnelAckItem{T: protocol.ItemTunnelAck, Task: f.task, Stream: d.Stream, Next: f.next[d.Stream]}))
+		case protocol.ItemTunnelAck:
+			// The client's ack of the echo: how far it took it, and its room.
+			var a protocol.TunnelAckItem
+			_ = protocol.UnmarshalCBOR(raw, &a)
+			l := f.leg(a.Stream)
+			if a.Next > l.acked {
+				l.acked, l.lastProgress = a.Next, time.Now()
+			}
+			if a.Room != nil {
+				l.limit = max(l.limit, a.Next+*a.Room)
+			}
 		case protocol.ItemTunnelClose:
 			var cl protocol.TunnelCloseItem
 			_ = protocol.UnmarshalCBOR(raw, &cl)
@@ -205,14 +291,7 @@ func (f *fakeCore) take(frame []byte) {
 	}
 	f.mu.Unlock()
 	if len(out) > 0 {
-		b, err := protocol.VPNFrame(out)
-		if err != nil {
-			f.t.Error(err)
-			return
-		}
-		if err := f.c.Take(b); err != nil {
-			f.t.Error(err)
-		}
+		f.send(out)
 	}
 }
 
@@ -240,7 +319,7 @@ func newRig(t *testing.T, opens []string, results map[string]int) *rig {
 	c.SetWriter(st)
 	st.Run()
 	f := &fakeCore{t: t, c: c, task: task[:], result: results, got: map[uint64][]byte{}, next: map[uint64]uint64{}, eof: map[uint64]bool{},
-		sent: map[uint64]uint64{}, closes: map[uint64]int{}, stop: make(chan struct{})}
+		echo: map[uint64]*echoLeg{}, closes: map[uint64]int{}, stop: make(chan struct{})}
 	go f.run()
 	t.Cleanup(func() { close(f.stop); close(d.closed); st.Close(); c.End() })
 	return &rig{machine: m, core: f, dev: d, st: st, c: c}
@@ -267,9 +346,7 @@ func TestTCPStream(t *testing.T) {
 		_, _ = conn.Write(sent)
 		_ = conn.CloseWrite()
 	}()
-	// A deadline, not a speed: under -race on a CI runner 950 KB took past
-	// 10 s once.
-	_ = conn.SetReadDeadline(time.Now().Add(45 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	got, err := io.ReadAll(conn)
 	if err != nil || !bytes.Equal(got, sent) {
 		t.Fatalf("echoed %d of %d bytes: %v", len(got), len(sent), err)
