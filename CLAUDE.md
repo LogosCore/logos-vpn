@@ -22,6 +22,23 @@ to route it into a VPN tunnel's networks.
   device and written back as built packets (`packet.go`).
 - `internal/system`: the interface's addresses and routes per OS (`ip`,
   `ifconfig`/`route`, `netsh`), and the plan of which routes go in.
+- `internal/coretrust`: how core's certificate is trusted: `-cert-sha256`,
+  `-ca-file`, `-insecure`, each falling back to the modules' variable
+  (`LOGOS_CORE_*`); a small copy of module-core's `coretls`, not an import
+  of it.
+- `install/`: the installers core serves beside the binaries (`make dist`
+  copies them; the release attaches them): `install.sh` (POSIX sh: dash,
+  busybox and bash; curl; `--pin` for curl's `--pinnedpubkey`,
+  `--cert-sha256` for logos-vpn) and `install.ps1` (ASCII only: it runs as
+  a script block fetched into memory; never `exit`, which would close the
+  window; `-CertSha256` pins through a compiled validation callback, a
+  script block's would run on a thread with no runspace). The line that
+  runs each is the frontend's (`tunnel-values.ts`, `vpnInstall`), and
+  `install_test.go`'s `pinPrefix` copies the Windows one: keep them the
+  same. The tests run each line against a fake core, plain and pinned;
+  install.ps1's need PowerShell (`LOGOS_VPN_PWSH`, a wrapper running
+  PowerShell's image as the user, say, or `pwsh` on PATH; CI: PowerShell
+  7 on Linux, Windows PowerShell 5.1 on Windows).
 
 ## Build and test
 

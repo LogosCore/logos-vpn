@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,8 +71,10 @@ func LinkURL(core string) (string, error) {
 }
 
 // Dial opens a link with the key, says the hello and reads core's welcome.
-func Dial(ctx context.Context, linkURL, key string, hello protocol.VPNHello) (*websocket.Conn, protocol.VPNWelcome, error) {
-	d := websocket.Dialer{HandshakeTimeout: dialWait, Proxy: http.ProxyFromEnvironment, ReadBufferSize: 64 << 10, WriteBufferSize: 64 << 10}
+// tc is how core's certificate is trusted (nil: the system's authorities).
+func Dial(ctx context.Context, linkURL, key string, hello protocol.VPNHello, tc *tls.Config) (*websocket.Conn, protocol.VPNWelcome, error) {
+	d := websocket.Dialer{HandshakeTimeout: dialWait, Proxy: http.ProxyFromEnvironment, ReadBufferSize: 64 << 10, WriteBufferSize: 64 << 10,
+		TLSClientConfig: tc}
 	conn, resp, err := d.DialContext(ctx, linkURL, http.Header{"Authorization": {"Bearer " + key}})
 	if err != nil {
 		if resp != nil {
@@ -119,6 +122,8 @@ type Link struct {
 	Logf func(format string, args ...any)
 	// Grace is how long a link may stay down (protocol.VPNLinkGrace).
 	Grace time.Duration
+	// TLS is how core's certificate is trusted (nil: the system's).
+	TLS *tls.Config
 
 	mu   sync.Mutex
 	conn *websocket.Conn
@@ -150,7 +155,7 @@ func (l *Link) Run(ctx context.Context, conn *websocket.Conn) error {
 				return nil
 			case <-time.After(backoff):
 			}
-			c, w, err := Dial(ctx, l.URL, l.Key, l.Hello)
+			c, w, err := Dial(ctx, l.URL, l.Key, l.Hello, l.TLS)
 			if err == nil {
 				if werr := l.Client.Welcome(w); werr != nil {
 					_ = c.Close()

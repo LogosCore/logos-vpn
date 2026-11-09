@@ -96,12 +96,12 @@ func TestDialRefused(t *testing.T) {
 	}}
 	srv := httptest.NewServer(f)
 	defer srv.Close()
-	_, _, err := Dial(context.Background(), wsURL(srv), "lgv_0123456789ab_secret", testHello)
+	_, _, err := Dial(context.Background(), wsURL(srv), "lgv_0123456789ab_secret", testHello, nil)
 	var refused *Refused
 	if !errors.As(err, &refused) || refused.Code != protocol.VPNCloseRefused || refused.Why != "the key is unknown" {
 		t.Fatalf("refused: %v", err)
 	}
-	if _, _, err := Dial(context.Background(), wsURL(srv), "lgv_wrong", testHello); err == nil || !strings.Contains(err.Error(), "401") {
+	if _, _, err := Dial(context.Background(), wsURL(srv), "lgv_wrong", testHello, nil); err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("a wrong key: %v", err)
 	}
 }
@@ -121,7 +121,7 @@ func TestLinkReconnectsAndEnds(t *testing.T) {
 	}
 	srv := httptest.NewServer(f)
 	defer srv.Close()
-	conn, w, err := Dial(context.Background(), wsURL(srv), "lgv_0123456789ab_secret", testHello)
+	conn, w, err := Dial(context.Background(), wsURL(srv), "lgv_0123456789ab_secret", testHello, nil)
 	if err != nil || w.User != "alice" {
 		t.Fatalf("dial: %v", err)
 	}

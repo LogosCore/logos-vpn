@@ -3,6 +3,10 @@
 // tunnel's routes through its minion. Ctrl-C disconnects it.
 //
 //	sudo logos-vpn https://logos.example.com lgv_…
+//
+// A core whose certificate the system does not trust (a self-signed one):
+// -cert-sha256 (its fingerprint), -ca-file or -insecure, as modules take
+// them (internal/coretrust).
 package main
 
 import (
@@ -25,6 +29,7 @@ import (
 
 	"github.com/logoscore/logos-golang-protocol/protocol"
 	"github.com/logoscore/logos-vpn/internal/client"
+	"github.com/logoscore/logos-vpn/internal/coretrust"
 	"github.com/logoscore/logos-vpn/internal/netstack"
 	"github.com/logoscore/logos-vpn/internal/system"
 	"golang.zx2c4.com/wireguard/tun"
@@ -58,8 +63,11 @@ func run() error {
 	name := flag.String("interface", defaultName(), "the interface's name (macOS: utun, any free one)")
 	mtu := flag.Int("mtu", 1500, "the interface's MTU")
 	showVersion := flag.Bool("version", false, "print the release and exit")
+	certSHA256 := flag.String("cert-sha256", "", "core's certificate's SHA-256 fingerprint: exactly that one trusted, self-signed or not ("+coretrust.EnvCertSHA256+")")
+	caFile := flag.String("ca-file", "", "a PEM file of certificates to trust beside the system's ("+coretrust.EnvCAFile+")")
+	insecure := flag.Bool("insecure", false, "no check of core's certificate: still encrypted, to whoever answers ("+coretrust.EnvInsecure+")")
 	flag.Usage = func() {
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: logos-vpn [-interface name] [-mtu n] <core address> <key>\n\n"+
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: logos-vpn [-interface name] [-mtu n] [-cert-sha256 fp | -ca-file pem | -insecure] <core address> <key>\n\n"+
 			"Routes this machine into a Logos tunnel's networks while it runs; Ctrl-C disconnects it.\n"+
 			"The key (lgv_…) comes from the tunnel's VPN tab (Connect a machine), or LOGOS_VPN_KEY.\n\n")
 		flag.PrintDefaults()
@@ -85,6 +93,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	trust, err := coretrust.Read(*caFile, *certSHA256, *insecure, nil)
+	if err != nil {
+		return err
+	}
+	tc, err := trust.TLS()
+	if err != nil {
+		return err
+	}
+	if trust.Insecure {
+		logf("core's certificate not checked (-insecure): the link is encrypted, but to whoever answers at that address")
+	}
 	if err := privileged(); err != nil {
 		return err
 	}
@@ -101,7 +120,7 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	conn, welcome, err := client.Dial(ctx, linkURL, key, hello)
+	conn, welcome, err := client.Dial(ctx, linkURL, key, hello, tc)
 	if err != nil {
 		return err
 	}
@@ -156,7 +175,7 @@ func run() error {
 		}
 	}()
 
-	link := &client.Link{URL: linkURL, Key: key, Hello: hello, Client: c, Logf: logf, Routes: func(r []string) {
+	link := &client.Link{URL: linkURL, Key: key, Hello: hello, Client: c, Logf: logf, TLS: tc, Routes: func(r []string) {
 		if prefixes, err := protocol.TunnelRoutes(r); err == nil {
 			c.SetRoutes(prefixes)
 		}

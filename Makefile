@@ -1,5 +1,6 @@
 # logos-vpn's builds: one binary a system, as core serves them
-# (VPN_CLIENT_DIR: logos-vpn-{os}-{arch}, .exe on Windows).
+# (VPN_CLIENT_DIR: logos-vpn-{os}-{arch}, .exe on Windows), and the
+# installers core serves beside them (install/install.sh, install.ps1).
 
 VERSION        ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PLATFORMS      := linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64
@@ -25,6 +26,7 @@ dist: $(WINTUN_ZIP)
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath $$tags -ldflags "$(LDFLAGS)" -o $$out ./cmd/logos-vpn || exit 1; \
 	done
 	@rm -rf cmd/logos-vpn/wintun
+	cp install/install.sh install/install.ps1 dist/
 
 # Wintun's release, checked against WireGuard's published hash.
 $(WINTUN_ZIP):

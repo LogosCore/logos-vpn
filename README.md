@@ -12,14 +12,45 @@ sudo logos-vpn https://logos.example.com lgv_…
 
 The command, with a key of the operator's, comes from the tunnel task's
 **VPN** tab (**Connect a machine**). On Windows the same runs in an
-elevated PowerShell (`.\logos-vpn.exe …`). The key may come from
+elevated PowerShell (`logos-vpn …`). The key may come from
 `LOGOS_VPN_KEY` instead of the command line.
 
 | Flag | |
 |---|---|
 | `-interface` | the interface's name: `logos0` (Linux), any free `utun` (macOS), `logos-vpn` (Windows) |
 | `-mtu` | the interface's MTU, 1500 |
+| `-cert-sha256` | core's certificate's SHA-256 fingerprint: exactly that one trusted, self-signed or not (`LOGOS_CORE_CERT_SHA256`) |
+| `-ca-file` | a PEM file of certificates trusted beside the system's (`LOGOS_CORE_CA_FILE`) |
+| `-insecure` | no check of core's certificate: still encrypted, to whoever answers (`LOGOS_CORE_TLS_INSECURE`) |
 | `-version` | the release |
+
+The three trust settings are a module's own (docs: deployment, "How
+modules reach core"); the first set of `-insecure`, `-cert-sha256`,
+`-ca-file` decides, a flag over its variable.
+
+## Installing
+
+Connect a machine gives one line that installs this core's logos-vpn and
+connects, fetching an installer from core:
+
+```sh
+curl -fsSL https://logos.example.com/api/v1/vpn/install.sh | sudo sh -s -- https://logos.example.com lgv_…
+```
+
+```powershell
+& ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://logos.example.com/api/v1/vpn/install.ps1'))) https://logos.example.com lgv_…
+```
+
+The installer (`install/install.sh` for Linux and macOS, `install.ps1` for
+Windows PowerShell 5.1 and PowerShell 7) fetches the machine's binary
+from core with the key, checks it against the release's `SHA256SUMS`,
+puts it on the PATH (`/usr/local/bin`; `%ProgramFiles%\Logos`, added to
+the machine's PATH) and connects. Run again, it replaces the one there.
+`--no-connect` (`-NoConnect`) installs alone. For a core whose
+certificate is self-signed, core's front (logos-nginx) says its pins, and
+the line carries them: `curl -k --pinnedpubkey sha256//…` and `--pin`
+for the fetches, `--cert-sha256` for logos-vpn (on Windows a validation
+callback checks the fingerprint, and `-CertSha256`).
 
 ## What it does
 
@@ -43,7 +74,7 @@ elevated PowerShell (`.\logos-vpn.exe …`). The key may come from
 ## Building
 
 ```sh
-make dist   # dist/logos-vpn-{linux,darwin,windows}-{amd64,arm64}[.exe]
+make dist   # dist/logos-vpn-{linux,darwin,windows}-{amd64,arm64}[.exe], install.sh, install.ps1
 make test
 make lint
 ```

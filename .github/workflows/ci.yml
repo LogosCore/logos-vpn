@@ -19,9 +19,30 @@ jobs:
           go-version-file: go.mod
 
       # The end-to-end tests need no root: a second gVisor stack plays the
-      # operator's machine.
+      # operator's machine. The installers' tests run install.sh under the
+      # runner's sh and install.ps1 under PowerShell 7 (on the runner).
       - name: Test
         run: go test -race ./...
+        env:
+          LOGOS_VPN_REQUIRE_PWSH: "1"
+
+  # install.ps1 under Windows PowerShell 5.1, the one every Windows has.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./install/
+        env:
+          LOGOS_VPN_PWSH: powershell.exe
+          LOGOS_VPN_REQUIRE_PWSH: "1"
 
   lint:
     runs-on: ubuntu-latest

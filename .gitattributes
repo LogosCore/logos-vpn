@@ -1,0 +1,3 @@
+# LF everywhere, on Windows checkouts too: install.sh runs under sh as
+# core serves it, and the installers' tests serve the checked-out files.
+* text=auto eol=lf
