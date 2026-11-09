@@ -303,7 +303,8 @@ func TestInstallPS1(t *testing.T) {
 		line := `& ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('` + plain.URL + `/api/v1/vpn/install.ps1'))) '` + plain.URL +
 			`' 'lgv_other' -NoConnect -Platform windows-amd64 -Dir '` + dir + `'`
 		out, _ := exec.Command(ps[0], append(ps[1:], "-NoProfile", "-NonInteractive", "-Command", line)...).CombinedOutput()
-		if !strings.Contains(string(out), `401 {"error":"the key is unknown, lapsed or used"}`) {
+		// Windows PowerShell wraps an error's lines at the console's width.
+		if !strings.Contains(strings.Join(strings.Fields(string(out)), ""), `401{"error":"thekeyisunknown,lapsedorused"}`) {
 			t.Errorf("says %s", out)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "logos-vpn.exe")); err == nil {

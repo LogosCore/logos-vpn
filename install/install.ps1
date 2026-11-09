@@ -95,7 +95,11 @@ try {
   }
   $got = Join-Path $tmp $file
   Get-FromCore "/api/v1/vpn/client/$Platform" $got
-  $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $got).Hash.ToLowerInvariant()
+  # .NET's SHA-256, not Get-FileHash: Windows PowerShell 5.1 started from
+  # PowerShell 7 (its module path inherited) has no Get-FileHash.
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { $hash = ([BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($got))) -replace '-', '').ToLowerInvariant() }
+  finally { $sha.Dispose() }
   if (-not $want -or $want -ne $hash) { throw "logos-vpn install: $name does not match its SHA256SUMS ($want): not installed" }
   New-Item -ItemType Directory -Force -Path $Dir | Out-Null
   $exe = Join-Path $Dir $file

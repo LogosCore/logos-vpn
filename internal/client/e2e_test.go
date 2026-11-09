@@ -267,7 +267,9 @@ func TestTCPStream(t *testing.T) {
 		_, _ = conn.Write(sent)
 		_ = conn.CloseWrite()
 	}()
-	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	// A deadline, not a speed: under -race on a CI runner 950 KB took past
+	// 10 s once.
+	_ = conn.SetReadDeadline(time.Now().Add(45 * time.Second))
 	got, err := io.ReadAll(conn)
 	if err != nil || !bytes.Equal(got, sent) {
 		t.Fatalf("echoed %d of %d bytes: %v", len(got), len(sent), err)
