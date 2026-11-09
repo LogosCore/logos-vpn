@@ -165,7 +165,7 @@ func (f *fakeCore) flush() []cbor.RawMessage {
 		for len(out) < echoBurst {
 			stop := min(end, l.limit, l.sent+echoChunk)
 			eof := l.eof && stop == end
-			if stop <= l.sent && !(eof && l.sent == end) {
+			if stop <= l.sent && (!eof || l.sent != end) {
 				break
 			}
 			out = append(out, marshal(protocol.TunnelDataItem{T: protocol.ItemTunnelData, Task: f.task, Stream: stream, Off: l.sent,
