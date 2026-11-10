@@ -6,7 +6,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/logoscore/logos-golang-protocol v0.44.0
+	github.com/logoscore/logos-golang-protocol v0.48.2
 	golang.org/x/sys v0.32.0
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
