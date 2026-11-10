@@ -48,6 +48,13 @@ make lint    # golangci-lint for linux, darwin and windows
 make dist    # the six binaries in dist/
 ```
 
+CI's `dist` job runs `make dist` on main and saves Go's caches, one entry
+for each go.mod and go.sum. The Release on a tag restores them and is left
+with the links: about a minute less than a cold build. A tag's run can read
+main's caches but not another tag's, so push main and let its CI finish
+before tagging (release.py does). The cache paths and key are the same in
+`ci.yml` and `release.yml`: keep them alike.
+
 `GOTOOLCHAIN=local`: the module stays on Go 1.25.7 like core, gVisor and
 x/ pinned to wireguard-go's versions (the newest gVisor needs Go 1.27).
 The tests need no root: `internal/client/e2e_test.go` runs a second gVisor

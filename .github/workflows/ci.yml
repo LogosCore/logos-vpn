@@ -66,3 +66,45 @@ jobs:
           GOOS: ${{ matrix.goos }}
         with:
           version: v2.13.2
+
+  # The release's six binaries (make dist), so a target that does not build
+  # fails here, before a tag. This job also saves main's Go caches for the
+  # tag's Release (release.yml), which then only links: a run can restore
+  # its own ref's caches and main's, never another tag's, so a release
+  # never had a cache to read. Built cold, the six take over a minute; one
+  # cache entry, about a gigabyte, for each go.mod and go.sum.
+  dist:
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # The same paths and key as release.yml's restore: keep them alike.
+      - name: Go caches
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: dist-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: dist-${{ runner.os }}-
+
+      - name: Build
+        run: make dist
+
+      - name: Save the Go caches
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.cache.outputs.cache-primary-key }}

@@ -23,6 +23,21 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
+
+      # CI's dist job saved main's compiled packages for these go.mod and
+      # go.sum (release.py pushes main and waits for its CI before the tag),
+      # so the build is mostly links. Restored, never saved: no other tag
+      # could read this one's cache. The paths and key are ci.yml's: keep
+      # them alike.
+      - name: Go caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: dist-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: dist-${{ runner.os }}-
 
       - name: Build
         run: make dist VERSION=${{ github.ref_name }}
